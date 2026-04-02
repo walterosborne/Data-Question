@@ -1,5 +1,17 @@
-function buildWeeklyDates(startDate, count) {
-  const dates = []
+import type { LicenseRecord } from '../types'
+
+type RecordSeed = {
+  startDate: string
+  count: number
+  network: string
+  vendor: string
+  license: string
+  licensesAvailable: number
+  requestPattern: number[]
+}
+
+function buildWeeklyDates(startDate: string, count: number): string[] {
+  const dates: string[] = []
   const start = new Date(`${startDate}T00:00:00Z`)
 
   for (let index = 0; index < count; index += 1) {
@@ -19,7 +31,7 @@ function createRecords({
   license,
   licensesAvailable,
   requestPattern,
-}) {
+}: RecordSeed): LicenseRecord[] {
   return buildWeeklyDates(startDate, count).map((date, index) => {
     const totalRequests = requestPattern[index % requestPattern.length]
 
@@ -35,7 +47,7 @@ function createRecords({
   })
 }
 
-export const licenseHistory = [
+export const licenseHistory: LicenseRecord[] = [
   ...createRecords({
     startDate: '2025-01-03',
     count: 50,

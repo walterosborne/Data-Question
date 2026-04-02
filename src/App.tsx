@@ -1,14 +1,13 @@
-import { useState } from 'react'
+import { useState, type ChangeEvent } from 'react'
 import { licenseHistory } from './data/licenseHistory'
+import {
+  buildCapRows,
+  getEstimator,
+  getMostRecentRecord,
+  uniqueValues,
+} from './lib/licenseEstimator'
 
-const NORMAL_MODEL_MIN_RECORDS = 40
-const TWO_PI = 2 * Math.PI
-
-function uniqueValues(records, key) {
-  return [...new Set(records.map((record) => record[key]))].sort()
-}
-
-function formatPercent(value) {
+function formatPercent(value: number): string {
   const roundedValue = Math.round(value * 10) / 10
 
   if (roundedValue === 100 && value < 100) {
@@ -18,173 +17,20 @@ function formatPercent(value) {
   return `${roundedValue.toFixed(1)}%`
 }
 
-function formatExpectedDenials(value) {
+function formatExpectedDenials(value: number): string {
   const roundedValue = Math.round(value * 10) / 10
   return Number.isInteger(roundedValue)
     ? `${roundedValue}`
     : `${roundedValue.toFixed(1)}`
 }
 
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max)
-}
-
-function getHistoricalDenialChance(records, cap) {
-  if (!records.length || cap < 1) {
-    return null
-  }
-
-  const denialDates = records.filter((record) => record.totalRequests > cap).length
-  return (denialDates / records.length) * 100
-}
-
-function getHistoricalExpectedDenials(records, cap) {
-  if (!records.length || cap < 1) {
-    return null
-  }
-
-  const totalDeniedRequests = records.reduce((sum, record) => {
-    return sum + Math.max(record.totalRequests - cap, 0)
-  }, 0)
-
-  return totalDeniedRequests / records.length
-}
-
-function getRequestStats(records) {
-  if (!records.length) {
-    return null
-  }
-
-  const mean =
-    records.reduce((sum, record) => sum + record.totalRequests, 0) / records.length
-  const variance =
-    records.reduce((sum, record) => {
-      return sum + (record.totalRequests - mean) ** 2
-    }, 0) / records.length
-
-  return {
-    mean,
-    standardDeviation: Math.sqrt(variance),
-  }
-}
-
-function getStandardNormalDensity(zValue) {
-  return Math.exp(-0.5 * zValue * zValue) / Math.sqrt(TWO_PI)
-}
-
-function getErf(value) {
-  const sign = value < 0 ? -1 : 1
-  const absoluteValue = Math.abs(value)
-  const t = 1 / (1 + 0.3275911 * absoluteValue)
-
-  const approximation =
-    1 -
-    (((((1.061405429 * t + -1.453152027) * t + 1.421413741) * t + -0.284496736) *
-      t +
-      0.254829592) *
-      t *
-      Math.exp(-absoluteValue * absoluteValue))
-
-  return sign * approximation
-}
-
-function getStandardNormalCdf(zValue) {
-  return 0.5 * (1 + getErf(zValue / Math.sqrt(2)))
-}
-
-function getNormalDenialChance(stats, cap) {
-  if (!stats || cap < 1) {
-    return null
-  }
-
-  if (stats.standardDeviation === 0) {
-    return stats.mean > cap ? 100 : 0
-  }
-
-  const zValue = (cap - stats.mean) / stats.standardDeviation
-  return clamp((1 - getStandardNormalCdf(zValue)) * 100, 0, 100)
-}
-
-function getNormalExpectedDenials(stats, cap) {
-  if (!stats || cap < 1) {
-    return null
-  }
-
-  if (stats.standardDeviation === 0) {
-    return Math.max(stats.mean - cap, 0)
-  }
-
-  const zValue = (cap - stats.mean) / stats.standardDeviation
-  const tailProbability = 1 - getStandardNormalCdf(zValue)
-  const expectedDenials =
-    stats.standardDeviation * getStandardNormalDensity(zValue) +
-    (stats.mean - cap) * tailProbability
-
-  return Math.max(expectedDenials, 0)
-}
-
-function getEstimator(records) {
-  if (!records.length) {
-    return null
-  }
-
-  if (records.length < NORMAL_MODEL_MIN_RECORDS) {
-    return {
-      method: 'historical',
-      getDenialChance: (cap) => getHistoricalDenialChance(records, cap),
-      getExpectedDenials: (cap) => getHistoricalExpectedDenials(records, cap),
-    }
-  }
-
-  const stats = getRequestStats(records)
-
-  return {
-    method: 'normal',
-    stats,
-    getDenialChance: (cap) => getNormalDenialChance(stats, cap),
-    getExpectedDenials: (cap) => getNormalExpectedDenials(stats, cap),
-  }
-}
-
-function getMostRecentRecord(records) {
-  if (!records.length) {
-    return null
-  }
-
-  return records.reduce((latestRecord, record) => {
-    if (!latestRecord || record.date > latestRecord.date) {
-      return record
-    }
-
-    return latestRecord
-  }, null)
-}
-
-function buildCapRows(estimator, currentCap) {
-  if (!estimator || currentCap === null) {
-    return []
-  }
-
-  const startingCap = Math.max(1, currentCap - 2)
-
-  return Array.from({ length: 5 }, (_, index) => {
-    const cap = startingCap + index
-
-    return {
-      cap,
-      denialChance: estimator.getDenialChance(cap),
-      expectedDenials: estimator.getExpectedDenials(cap),
-    }
-  })
-}
-
 const networks = uniqueValues(licenseHistory, 'network')
 
 export default function App() {
-  const [selectedNetwork, setSelectedNetwork] = useState(networks[0] ?? '')
-  const [selectedVendor, setSelectedVendor] = useState('')
-  const [selectedLicense, setSelectedLicense] = useState('')
-  const [customCap, setCustomCap] = useState('')
+  const [selectedNetwork, setSelectedNetwork] = useState<string>(networks[0] ?? '')
+  const [selectedVendor, setSelectedVendor] = useState<string>('')
+  const [selectedLicense, setSelectedLicense] = useState<string>('')
+  const [customCap, setCustomCap] = useState<string>('')
 
   const vendorOptions = uniqueValues(
     licenseHistory.filter((record) => record.network === selectedNetwork),
@@ -219,17 +65,30 @@ export default function App() {
     ? estimator?.getExpectedDenials(customCapValue) ?? null
     : null
 
-  function handleNetworkChange(event) {
-    setSelectedNetwork(event.target.value)
+  function resetSelections(nextNetwork: string) {
+    setSelectedNetwork(nextNetwork)
     setSelectedVendor('')
     setSelectedLicense('')
     setCustomCap('')
   }
 
-  function handleVendorChange(event) {
+  function handleNetworkChange(event: ChangeEvent<HTMLSelectElement>) {
+    resetSelections(event.target.value)
+  }
+
+  function handleVendorChange(event: ChangeEvent<HTMLSelectElement>) {
     setSelectedVendor(event.target.value)
     setSelectedLicense('')
     setCustomCap('')
+  }
+
+  function handleLicenseChange(event: ChangeEvent<HTMLSelectElement>) {
+    setSelectedLicense(event.target.value)
+    setCustomCap('')
+  }
+
+  function handleCustomCapChange(event: ChangeEvent<HTMLInputElement>) {
+    setCustomCap(event.target.value)
   }
 
   return (
@@ -268,10 +127,7 @@ export default function App() {
               <span>License</span>
               <select
                 value={selectedLicense}
-                onChange={(event) => {
-                  setSelectedLicense(event.target.value)
-                  setCustomCap('')
-                }}
+                onChange={handleLicenseChange}
                 disabled={!licenseOptions.length}
               >
                 <option value="">Select license</option>
@@ -294,23 +150,25 @@ export default function App() {
                 selected cap, and expected denials is the average number of requests
                 that would be denied at that cap.
               </p>
-              {matchingRecords.length ? (
+              {matchingRecords.length > 0 ? (
                 <>
                   <p className="current-cap-note">
                     {usesNormalModel
                       ? `This license has ${matchingRecords.length} records, so the app uses a normal distribution fitted to the request history.`
                       : `This license has ${matchingRecords.length} records, so the app uses the direct historical rate from those records.`}
                   </p>
-                  <p className="current-cap-note">
-                    Current cap from the most recent record on {mostRecentRecord.date}:{' '}
-                    <strong>{baselineCap}</strong>
-                  </p>
+                  {mostRecentRecord ? (
+                    <p className="current-cap-note">
+                      Current cap from the most recent record on {mostRecentRecord.date}:{' '}
+                      <strong>{baselineCap}</strong>
+                    </p>
+                  ) : null}
                 </>
               ) : null}
             </div>
 
             <div className="results-panel">
-              {matchingRecords.length ? (
+              {matchingRecords.length > 0 ? (
                 <div className="table-wrap">
                   <table>
                     <thead>
@@ -342,7 +200,7 @@ export default function App() {
             </div>
           </div>
 
-          {matchingRecords.length ? (
+          {matchingRecords.length > 0 ? (
             <div className="custom-cap-card">
               <div>
                 <h2>Check a custom cap</h2>
@@ -359,7 +217,7 @@ export default function App() {
                   min="1"
                   step="1"
                   value={customCap}
-                  onChange={(event) => setCustomCap(event.target.value)}
+                  onChange={handleCustomCapChange}
                   placeholder="Enter a cap"
                 />
               </label>
@@ -367,7 +225,7 @@ export default function App() {
               <div className="custom-cap-result">
                 {customCap === '' ? (
                   <p>Enter a number to calculate the estimate.</p>
-                ) : customCapChance === null ? (
+                ) : customCapChance === null || customCapExpectedDenials === null ? (
                   <p>Please enter a whole number greater than 0.</p>
                 ) : (
                   <p>
@@ -375,9 +233,7 @@ export default function App() {
                     chance of any denial is{' '}
                     <strong>{formatPercent(customCapChance)}</strong>, and the
                     expected number of denied requests is{' '}
-                    <strong>
-                      {formatExpectedDenials(customCapExpectedDenials)}
-                    </strong>.
+                    <strong>{formatExpectedDenials(customCapExpectedDenials)}</strong>.
                   </p>
                 )}
               </div>
