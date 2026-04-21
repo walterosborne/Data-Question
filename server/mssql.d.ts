@@ -9,6 +9,7 @@ declare module 'mssql' {
     domain?: string
     server: string
     database: string
+    driver?: string
     port?: number
     connectionString?: string
     authentication?: {
@@ -20,6 +21,7 @@ declare module 'mssql' {
       }
     }
     options?: {
+      trustedConnection?: boolean
       instanceName?: string
       useUTC?: boolean
       encrypt?: boolean
@@ -42,6 +44,13 @@ declare module 'mssql' {
   }
 
   export function connect(configuration: config | string): Promise<ConnectionPool>
+
+  const sql: MssqlModule
+  export default sql
+}
+
+declare module 'mssql/msnodesqlv8' {
+  import type { MssqlModule } from 'mssql'
 
   const sql: MssqlModule
   export default sql

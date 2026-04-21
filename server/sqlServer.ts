@@ -1,11 +1,15 @@
-import sql from 'mssql'
+import { createRequire } from 'node:module'
+
+import type { config, ConnectionPool } from 'mssql'
 
 import type { LicenseRecord } from '../src/types'
 import { sqlServerConfig } from './sqlServerConfig'
 
+const require = createRequire(import.meta.url)
+
 const SAFE_TABLE_NAME_PATTERN = /^[A-Za-z0-9_.[\]]+$/
 
-let poolPromise: Promise<import('mssql').ConnectionPool> | null = null
+let poolPromise: Promise<ConnectionPool> | null = null
 
 type LicenseHistoryRow = {
   UsageDate: string | Date
@@ -57,7 +61,11 @@ function getConnectionConfig(): import('mssql').config {
   }
 
   const instanceName = sqlServerConfig.instanceName.trim() || undefined
-  const usesDomainLogin = Boolean(sqlServerConfig.domain.trim())
+  const usesDomainLogin = Boolean(
+    sqlServerConfig.domain.trim() &&
+      sqlServerConfig.user.trim() &&
+      sqlServerConfig.password.trim(),
+  )
 
   return {
     user: usesDomainLogin ? undefined : sqlServerConfig.user || undefined,
@@ -65,6 +73,7 @@ function getConnectionConfig(): import('mssql').config {
     domain: usesDomainLogin ? undefined : sqlServerConfig.domain || undefined,
     server: sqlServerConfig.server,
     database: sqlServerConfig.database,
+    driver: sqlServerConfig.driver,
     port: instanceName ? undefined : sqlServerConfig.port,
     authentication: usesDomainLogin
       ? {
@@ -77,6 +86,7 @@ function getConnectionConfig(): import('mssql').config {
         }
       : undefined,
     options: {
+      trustedConnection: sqlServerConfig.trustedConnection,
       instanceName,
       useUTC: true,
       encrypt: sqlServerConfig.encrypt,
@@ -85,13 +95,25 @@ function getConnectionConfig(): import('mssql').config {
   }
 }
 
-async function getPool(): Promise<import('mssql').ConnectionPool> {
-  const connectionConfig = sqlServerConfig.connectionString.trim()
+function getSqlClient(): typeof import('mssql/msnodesqlv8').default {
+  try {
+    return require('mssql/msnodesqlv8') as typeof import('mssql/msnodesqlv8').default
+  } catch (error) {
+    throw new Error(
+      `The msnodesqlv8 driver is not available. Install it in the environment running this backend with "npm install mssql msnodesqlv8". Original error: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+  }
+}
+
+async function getPool(): Promise<ConnectionPool> {
+  const connectionConfig: config | string = sqlServerConfig.connectionString.trim()
     ? sqlServerConfig.connectionString.trim()
     : getConnectionConfig()
 
   if (!poolPromise) {
-    poolPromise = sql.connect(connectionConfig)
+    poolPromise = getSqlClient().connect(connectionConfig)
   }
 
   return poolPromise

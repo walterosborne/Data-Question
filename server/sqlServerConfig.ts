@@ -3,11 +3,13 @@ export const sqlServerConfig = {
   server: '',
   database: '',
   tableOrView: '',
+  driver: 'msnodesqlv8',
   user: '',
   password: '',
   domain: '',
   port: 1433,
   instanceName: '',
+  trustedConnection: true,
   encrypt: false,
   trustServerCertificate: true,
 } as const
