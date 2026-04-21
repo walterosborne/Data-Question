@@ -1,4 +1,8 @@
 declare module 'mssql' {
+  export interface MssqlModule {
+    connect(configuration: config | string): Promise<ConnectionPool>
+  }
+
   export type config = {
     user?: string
     password?: string
@@ -38,4 +42,7 @@ declare module 'mssql' {
   }
 
   export function connect(configuration: config | string): Promise<ConnectionPool>
+
+  const sql: MssqlModule
+  export default sql
 }

@@ -1,4 +1,4 @@
-import * as sql from 'mssql'
+import sql from 'mssql'
 
 import type { LicenseRecord } from '../src/types'
 import { sqlServerConfig } from './sqlServerConfig'
