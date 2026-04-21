@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 
-import type { config, ConnectionPool } from 'mssql'
+import type { SqlClient } from 'msnodesqlv8'
 
 import type { LicenseRecord } from '../src/types'
 import { sqlServerConfig } from './sqlServerConfig'
@@ -8,8 +8,6 @@ import { sqlServerConfig } from './sqlServerConfig'
 const require = createRequire(import.meta.url)
 
 const SAFE_TABLE_NAME_PATTERN = /^[A-Za-z0-9_.[\]]+$/
-
-let poolPromise: Promise<ConnectionPool> | null = null
 
 type LicenseHistoryRow = {
   UsageDate: string | Date
@@ -20,6 +18,8 @@ type LicenseHistoryRow = {
   numbernormal: number | null
   numberdenials: number | null
 }
+
+const sql: SqlClient = require('msnodesqlv8') as SqlClient
 
 function getMissingConfigFields(): string[] {
   const missing: string[] = []
@@ -51,7 +51,7 @@ function getValidatedTableOrView(): string {
   return tableOrView
 }
 
-function getConnectionConfig(): import('mssql').config {
+function getConnectionString(): string {
   const missingFields = getMissingConfigFields()
 
   if (missingFields.length > 0) {
@@ -60,63 +60,21 @@ function getConnectionConfig(): import('mssql').config {
     )
   }
 
-  const instanceName = sqlServerConfig.instanceName.trim() || undefined
-  const usesDomainLogin = Boolean(
-    sqlServerConfig.domain.trim() &&
-      sqlServerConfig.user.trim() &&
-      sqlServerConfig.password.trim(),
-  )
-
-  return {
-    user: usesDomainLogin ? undefined : sqlServerConfig.user || undefined,
-    password: usesDomainLogin ? undefined : sqlServerConfig.password || undefined,
-    domain: usesDomainLogin ? undefined : sqlServerConfig.domain || undefined,
-    server: sqlServerConfig.server,
-    database: sqlServerConfig.database,
-    driver: sqlServerConfig.driver,
-    port: instanceName ? undefined : sqlServerConfig.port,
-    authentication: usesDomainLogin
-      ? {
-          type: 'ntlm',
-          options: {
-            userName: sqlServerConfig.user,
-            password: sqlServerConfig.password,
-            domain: sqlServerConfig.domain,
-          },
-        }
-      : undefined,
-    options: {
-      trustedConnection: sqlServerConfig.trustedConnection,
-      instanceName,
-      useUTC: true,
-      encrypt: sqlServerConfig.encrypt,
-      trustServerCertificate: sqlServerConfig.trustServerCertificate,
-    },
-  }
-}
-
-function getSqlClient(): typeof import('mssql/msnodesqlv8').default {
-  try {
-    return require('mssql/msnodesqlv8') as typeof import('mssql/msnodesqlv8').default
-  } catch (error) {
-    throw new Error(
-      `The msnodesqlv8 driver is not available. Install it in the environment running this backend with "npm install mssql msnodesqlv8". Original error: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    )
-  }
-}
-
-async function getPool(): Promise<ConnectionPool> {
-  const connectionConfig: config | string = sqlServerConfig.connectionString.trim()
-    ? sqlServerConfig.connectionString.trim()
-    : getConnectionConfig()
-
-  if (!poolPromise) {
-    poolPromise = getSqlClient().connect(connectionConfig)
+  if (sqlServerConfig.connectionString.trim()) {
+    return sqlServerConfig.connectionString.trim()
   }
 
-  return poolPromise
+  return [
+    `Driver={${sqlServerConfig.driver}}`,
+    `Server=${sqlServerConfig.server}`,
+    `Database=${sqlServerConfig.database}`,
+    'Trusted_Connection=Yes',
+    `Connect Timeout=${sqlServerConfig.connectTimeoutSeconds}`,
+    `Encrypt=${sqlServerConfig.encrypt ? 'True' : 'False'}`,
+    `TrustServerCertificate=${sqlServerConfig.trustServerCertificate ? 'True' : 'False'}`,
+    `ApplicationIntent=${sqlServerConfig.applicationIntent}`,
+    `MultiSubnetFailover=${sqlServerConfig.multiSubnetFailover ? 'True' : 'False'}`,
+  ].join(';')
 }
 
 function normalizeUsageDate(value: unknown): string {
@@ -128,9 +86,8 @@ function normalizeUsageDate(value: unknown): string {
 }
 
 export async function getLicenseHistory(): Promise<LicenseRecord[]> {
-  const pool = await getPool()
   const tableOrView = getValidatedTableOrView()
-  const result = await pool.request().query<LicenseHistoryRow>(`
+  const queryText = `
     SELECT
       UsageDate,
       network,
@@ -141,9 +98,24 @@ export async function getLicenseHistory(): Promise<LicenseRecord[]> {
       numberdenials
     FROM ${tableOrView}
     ORDER BY UsageDate ASC, network ASC, vendorname ASC, featurename ASC
-  `)
+  `
 
-  return result.recordset.map((row) => ({
+  const rows = await new Promise<LicenseHistoryRow[]>((resolve, reject) => {
+    sql.query<LicenseHistoryRow>(
+      getConnectionString(),
+      queryText,
+      (error, resultRows) => {
+        if (error) {
+          reject(error)
+          return
+        }
+
+        resolve(resultRows)
+      },
+    )
+  })
+
+  return rows.map((row) => ({
     UsageDate: normalizeUsageDate(row.UsageDate),
     network: String(row.network ?? ''),
     vendorname: String(row.vendorname ?? ''),
