@@ -4,19 +4,31 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "vite",
+    "dev:server": "node --import tsx server/index.ts",
     "build": "vite build",
+    "server": "node --import tsx server/index.ts",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
+    "express": "^5.1.0",
+    "mssql": "^11.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
+  "optionalDependencies": {
+    "msnodesqlv8": "^5.1.1"
+  },
   "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.10",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
     "typescript": "^5.7.2",
     "vite": "^5.4.11"
   }

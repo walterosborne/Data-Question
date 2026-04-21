@@ -1,11 +1,11 @@
-import { useState, type ChangeEvent } from 'react'
-import { licenseHistory } from './data/licenseHistory'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import {
   buildCapRows,
   getEstimator,
   getMostRecentRecord,
   uniqueValues,
 } from './lib/licenseEstimator'
+import type { LicenseRecord } from './types'
 
 function formatPercent(value: number): string {
   const roundedValue = Math.round(value * 10) / 10
@@ -24,36 +24,40 @@ function formatExpectedDenials(value: number): string {
     : `${roundedValue.toFixed(1)}`
 }
 
-const networks = uniqueValues(licenseHistory, 'network')
-
 export default function App() {
-  const [selectedNetwork, setSelectedNetwork] = useState<string>(networks[0] ?? '')
+  const [licenseHistory, setLicenseHistory] = useState<LicenseRecord[]>([])
+  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [loadError, setLoadError] = useState<string>('')
+  const [selectedNetwork, setSelectedNetwork] = useState<string>('')
   const [selectedVendor, setSelectedVendor] = useState<string>('')
   const [selectedLicense, setSelectedLicense] = useState<string>('')
   const [customCap, setCustomCap] = useState<string>('')
 
+  const networks = uniqueValues(licenseHistory, 'network')
+
   const vendorOptions = uniqueValues(
     licenseHistory.filter((record) => record.network === selectedNetwork),
-    'vendor',
+    'vendorname',
   )
 
   const licenseOptions = uniqueValues(
     licenseHistory.filter(
       (record) =>
-        record.network === selectedNetwork && record.vendor === selectedVendor,
+        record.network === selectedNetwork &&
+        record.vendorname === selectedVendor,
     ),
-    'license',
+    'featurename',
   )
 
   const matchingRecords = licenseHistory.filter(
     (record) =>
       record.network === selectedNetwork &&
-      record.vendor === selectedVendor &&
-      record.license === selectedLicense,
+      record.vendorname === selectedVendor &&
+      record.featurename === selectedLicense,
   )
 
   const mostRecentRecord = getMostRecentRecord(matchingRecords)
-  const baselineCap = mostRecentRecord?.licensesAvailable ?? null
+  const baselineCap = mostRecentRecord?.licensetotal ?? null
   const estimator = getEstimator(matchingRecords)
   const usesNormalModel = estimator?.method === 'normal'
   const capRows = buildCapRows(estimator, baselineCap)
@@ -64,6 +68,64 @@ export default function App() {
   const customCapExpectedDenials = Number.isInteger(customCapValue)
     ? estimator?.getExpectedDenials(customCapValue) ?? null
     : null
+
+  useEffect(() => {
+    let isActive = true
+
+    async function loadLicenseHistory() {
+      setIsLoading(true)
+      setLoadError('')
+
+      try {
+        const response = await fetch('/api/license-history')
+        const body = (await response.json()) as LicenseRecord[] | { message?: string }
+
+        if (!response.ok) {
+          throw new Error(
+            'message' in body && body.message
+              ? body.message
+              : 'Failed to load license history.',
+          )
+        }
+
+        if (isActive) {
+          setLicenseHistory(body as LicenseRecord[])
+        }
+      } catch (error) {
+        if (isActive) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : 'Failed to load license history.',
+          )
+        }
+      } finally {
+        if (isActive) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void loadLicenseHistory()
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!networks.length) {
+      setSelectedNetwork('')
+      return
+    }
+
+    if (!selectedNetwork || !networks.includes(selectedNetwork)) {
+      setSelectedNetwork(networks[0])
+      setSelectedVendor('')
+      setSelectedLicense('')
+      setCustomCap('')
+    }
+  }, [networks, selectedNetwork])
 
   function resetSelections(nextNetwork: string) {
     setSelectedNetwork(nextNetwork)
@@ -98,7 +160,11 @@ export default function App() {
           <div className="filters">
             <label>
               <span>Network</span>
-              <select value={selectedNetwork} onChange={handleNetworkChange}>
+              <select
+                value={selectedNetwork}
+                onChange={handleNetworkChange}
+                disabled={isLoading || !networks.length}
+              >
                 {networks.map((network) => (
                   <option key={network} value={network}>
                     {network}
@@ -112,7 +178,7 @@ export default function App() {
               <select
                 value={selectedVendor}
                 onChange={handleVendorChange}
-                disabled={!vendorOptions.length}
+                disabled={isLoading || !vendorOptions.length}
               >
                 <option value="">Select vendor</option>
                 {vendorOptions.map((vendor) => (
@@ -128,7 +194,7 @@ export default function App() {
               <select
                 value={selectedLicense}
                 onChange={handleLicenseChange}
-                disabled={!licenseOptions.length}
+                disabled={isLoading || !licenseOptions.length}
               >
                 <option value="">Select license</option>
                 {licenseOptions.map((license) => (
@@ -159,7 +225,7 @@ export default function App() {
                   </p>
                   {mostRecentRecord ? (
                     <p className="current-cap-note">
-                      Current cap from the most recent record on {mostRecentRecord.date}:{' '}
+                      Current cap from the most recent record on {mostRecentRecord.UsageDate}:{' '}
                       <strong>{baselineCap}</strong>
                     </p>
                   ) : null}
@@ -168,7 +234,11 @@ export default function App() {
             </div>
 
             <div className="results-panel">
-              {matchingRecords.length > 0 ? (
+              {isLoading ? (
+                <div className="empty-state">Loading license history...</div>
+              ) : loadError ? (
+                <div className="empty-state">{loadError}</div>
+              ) : matchingRecords.length > 0 ? (
                 <div className="table-wrap">
                   <table>
                     <thead>

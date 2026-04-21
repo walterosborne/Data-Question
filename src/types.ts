@@ -1,14 +1,14 @@
 export type LicenseRecord = {
-  date: string
+  UsageDate: string
   network: string
-  vendor: string
-  license: string
-  licensesAvailable: number
-  totalRequests: number
-  deniedRequests: number
+  vendorname: string
+  featurename: string
+  licensetotal: number
+  numbernormal: number
+  numberdenials: number
 }
 
-export type FilterKey = 'network' | 'vendor' | 'license'
+export type FilterKey = 'network' | 'vendorname' | 'featurename'
 
 export type RequestStats = {
   mean: number
