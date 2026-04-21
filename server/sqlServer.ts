@@ -1,9 +1,7 @@
-import { createRequire } from 'node:module'
+import * as sql from 'mssql'
 
 import type { LicenseRecord } from '../src/types'
 import { sqlServerConfig } from './sqlServerConfig'
-
-const require = createRequire(import.meta.url)
 
 const SAFE_TABLE_NAME_PATTERN = /^[A-Za-z0-9_.[\]]+$/
 
@@ -19,26 +17,14 @@ type LicenseHistoryRow = {
   numberdenials: number | null
 }
 
-function getSqlClient(): typeof import('mssql/msnodesqlv8') {
-  try {
-    return require('mssql/msnodesqlv8') as typeof import('mssql/msnodesqlv8')
-  } catch (error) {
-    throw new Error(
-      `The msnodesqlv8 driver is not available. Install the optional dependency in the Windows/ODBC environment that will run this backend. Original error: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    )
-  }
-}
-
 function getMissingConfigFields(): string[] {
   const missing: string[] = []
 
-  if (!sqlServerConfig.server.trim()) {
+  if (!sqlServerConfig.connectionString.trim() && !sqlServerConfig.server.trim()) {
     missing.push('server')
   }
 
-  if (!sqlServerConfig.database.trim()) {
+  if (!sqlServerConfig.connectionString.trim() && !sqlServerConfig.database.trim()) {
     missing.push('database')
   }
 
@@ -70,27 +56,42 @@ function getConnectionConfig(): import('mssql').config {
     )
   }
 
-  const serverTarget = sqlServerConfig.instanceName.trim()
-    ? `${sqlServerConfig.server}\\${sqlServerConfig.instanceName}`
-    : sqlServerConfig.server
+  const instanceName = sqlServerConfig.instanceName.trim() || undefined
+  const usesDomainLogin = Boolean(sqlServerConfig.domain.trim())
 
   return {
+    user: usesDomainLogin ? undefined : sqlServerConfig.user || undefined,
+    password: usesDomainLogin ? undefined : sqlServerConfig.password || undefined,
+    domain: usesDomainLogin ? undefined : sqlServerConfig.domain || undefined,
     server: sqlServerConfig.server,
     database: sqlServerConfig.database,
-    connectionString: `Driver={${sqlServerConfig.driver}};Server=${serverTarget};Database=${sqlServerConfig.database};Trusted_Connection=Yes;`,
+    port: instanceName ? undefined : sqlServerConfig.port,
+    authentication: usesDomainLogin
+      ? {
+          type: 'ntlm',
+          options: {
+            userName: sqlServerConfig.user,
+            password: sqlServerConfig.password,
+            domain: sqlServerConfig.domain,
+          },
+        }
+      : undefined,
     options: {
-      trustedConnection: true,
-      instanceName: sqlServerConfig.instanceName || undefined,
+      instanceName,
       useUTC: true,
+      encrypt: sqlServerConfig.encrypt,
+      trustServerCertificate: sqlServerConfig.trustServerCertificate,
     },
   }
 }
 
 async function getPool(): Promise<import('mssql').ConnectionPool> {
-  const connectionConfig = getConnectionConfig()
+  const connectionConfig = sqlServerConfig.connectionString.trim()
+    ? sqlServerConfig.connectionString.trim()
+    : getConnectionConfig()
 
   if (!poolPromise) {
-    poolPromise = getSqlClient().connect(connectionConfig)
+    poolPromise = sql.connect(connectionConfig)
   }
 
   return poolPromise

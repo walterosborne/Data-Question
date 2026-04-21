@@ -1,12 +1,25 @@
 declare module 'mssql' {
   export type config = {
+    user?: string
+    password?: string
+    domain?: string
     server: string
     database: string
+    port?: number
     connectionString?: string
+    authentication?: {
+      type: 'default' | 'ntlm'
+      options: {
+        userName: string
+        password: string
+        domain: string
+      }
+    }
     options?: {
-      trustedConnection?: boolean
       instanceName?: string
       useUTC?: boolean
+      encrypt?: boolean
+      trustServerCertificate?: boolean
     }
   }
 
@@ -23,10 +36,6 @@ declare module 'mssql' {
   export class ConnectionPool {
     request(): Request
   }
-}
 
-declare module 'mssql/msnodesqlv8' {
-  import type { config, ConnectionPool } from 'mssql'
-
-  export function connect(configuration: config): Promise<ConnectionPool>
+  export function connect(configuration: config | string): Promise<ConnectionPool>
 }

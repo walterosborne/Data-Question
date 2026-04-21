@@ -1,7 +1,13 @@
 export const sqlServerConfig = {
+  connectionString: '',
   server: '',
   database: '',
   tableOrView: '',
-  driver: 'ODBC Driver 18 for SQL Server',
+  user: '',
+  password: '',
+  domain: '',
+  port: 1433,
   instanceName: '',
+  encrypt: false,
+  trustServerCertificate: true,
 } as const
