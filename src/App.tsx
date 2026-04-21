@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
+import * as XLSX from 'xlsx'
 import {
   buildCapRows,
   getEstimator,
@@ -22,6 +23,84 @@ function formatExpectedDenials(value: number): string {
   return Number.isInteger(roundedValue)
     ? `${roundedValue}`
     : `${roundedValue.toFixed(1)}`
+}
+
+function toStringValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return ''
+  }
+
+  return String(value).trim()
+}
+
+function toNumberValue(value: unknown): number {
+  if (typeof value === 'number') {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const cleanedValue = value.replace(/,/g, '').trim()
+    return cleanedValue ? Number(cleanedValue) : 0
+  }
+
+  return 0
+}
+
+function normalizeUsageDate(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10)
+  }
+
+  return toStringValue(value)
+}
+
+function parseLicenseHistoryRow(row: Record<string, unknown>): LicenseRecord | null {
+  const vendorname = toStringValue(row.vendorname)
+  const featurename = toStringValue(row.featurename)
+
+  if (!vendorname && !featurename) {
+    return null
+  }
+
+  return {
+    UsageDate: normalizeUsageDate(row.UsageDate),
+    network: toStringValue(row.network),
+    vendorname,
+    featurename,
+    licensetotal: toNumberValue(row.licensetotal),
+    numbernormal: toNumberValue(row.numbernormal),
+    numberdenials: toNumberValue(row.numberdenials),
+  }
+}
+
+async function loadLicenseHistoryFromWorkbook(): Promise<LicenseRecord[]> {
+  const response = await fetch('/license-history.xlsx')
+
+  if (!response.ok) {
+    throw new Error(
+      'Place your Excel file at public/license-history.xlsx, then restart or refresh the app.',
+    )
+  }
+
+  const workbookData = await response.arrayBuffer()
+  const workbook = XLSX.read(workbookData, {
+    type: 'array',
+    cellDates: true,
+  })
+  const firstSheetName = workbook.SheetNames[0]
+
+  if (!firstSheetName) {
+    throw new Error('The workbook does not contain any sheets.')
+  }
+
+  const firstWorksheet = workbook.Sheets[firstSheetName]
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstWorksheet, {
+    defval: '',
+  })
+
+  return rows
+    .map(parseLicenseHistoryRow)
+    .filter((row): row is LicenseRecord => row !== null)
 }
 
 export default function App() {
@@ -77,26 +156,15 @@ export default function App() {
       setLoadError('')
 
       try {
-        const response = await fetch('/api/license-history')
-        const body = (await response.json()) as LicenseRecord[] | { message?: string }
-
-        if (!response.ok) {
-          throw new Error(
-            'message' in body && body.message
-              ? body.message
-              : 'Failed to load license history.',
-          )
-        }
-
         if (isActive) {
-          setLicenseHistory(body as LicenseRecord[])
+          setLicenseHistory(await loadLicenseHistoryFromWorkbook())
         }
       } catch (error) {
         if (isActive) {
           setLoadError(
             error instanceof Error
               ? error.message
-              : 'Failed to load license history.',
+              : 'Failed to load license history from the Excel file.',
           )
         }
       } finally {
