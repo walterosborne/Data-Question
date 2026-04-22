@@ -3,19 +3,10 @@ import type {
   Estimator,
   FilterKey,
   LicenseRecord,
-  RequestStats,
 } from '../types'
-
-export const NORMAL_MODEL_MIN_RECORDS = 40
-
-const TWO_PI = 2 * Math.PI
 
 export function uniqueValues(records: LicenseRecord[], key: FilterKey): string[] {
   return [...new Set(records.map((record) => record[key]))].sort()
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
 }
 
 function getHistoricalDenialChance(
@@ -45,103 +36,15 @@ function getHistoricalExpectedDenials(
   return totalDeniedRequests / records.length
 }
 
-function getRequestStats(records: LicenseRecord[]): RequestStats | null {
-  if (!records.length) {
-    return null
-  }
-
-  const mean =
-    records.reduce((sum, record) => sum + record.peakusage, 0) / records.length
-  const variance =
-    records.reduce((sum, record) => {
-      return sum + (record.peakusage - mean) ** 2
-    }, 0) / records.length
-
-  return {
-    mean,
-    standardDeviation: Math.sqrt(variance),
-  }
-}
-
-function getStandardNormalDensity(zValue: number): number {
-  return Math.exp(-0.5 * zValue * zValue) / Math.sqrt(TWO_PI)
-}
-
-function getErf(value: number): number {
-  const sign = value < 0 ? -1 : 1
-  const absoluteValue = Math.abs(value)
-  const t = 1 / (1 + 0.3275911 * absoluteValue)
-
-  // Abramowitz-Stegun style approximation for erf(x).
-  const approximation =
-    1 -
-    (((((1.061405429 * t + -1.453152027) * t + 1.421413741) * t + -0.284496736) *
-      t +
-      0.254829592) *
-      t *
-      Math.exp(-absoluteValue * absoluteValue))
-
-  return sign * approximation
-}
-
-function getStandardNormalCdf(zValue: number): number {
-  return 0.5 * (1 + getErf(zValue / Math.sqrt(2)))
-}
-
-function getNormalDenialChance(stats: RequestStats | null, cap: number): number | null {
-  if (!stats || cap < 1) {
-    return null
-  }
-
-  if (stats.standardDeviation === 0) {
-    return stats.mean > cap ? 100 : 0
-  }
-
-  const zValue = (cap - stats.mean) / stats.standardDeviation
-  return clamp((1 - getStandardNormalCdf(zValue)) * 100, 0, 100)
-}
-
-function getNormalExpectedDenials(
-  stats: RequestStats | null,
-  cap: number,
-): number | null {
-  if (!stats || cap < 1) {
-    return null
-  }
-
-  if (stats.standardDeviation === 0) {
-    return Math.max(stats.mean - cap, 0)
-  }
-
-  const zValue = (cap - stats.mean) / stats.standardDeviation
-  const tailProbability = 1 - getStandardNormalCdf(zValue)
-  const expectedDenials =
-    stats.standardDeviation * getStandardNormalDensity(zValue) +
-    (stats.mean - cap) * tailProbability
-
-  return Math.max(expectedDenials, 0)
-}
-
 export function getEstimator(records: LicenseRecord[]): Estimator | null {
   if (!records.length) {
     return null
   }
 
-  if (records.length < NORMAL_MODEL_MIN_RECORDS) {
-    return {
-      method: 'historical',
-      getDenialChance: (cap: number) => getHistoricalDenialChance(records, cap),
-      getExpectedDenials: (cap: number) => getHistoricalExpectedDenials(records, cap),
-    }
-  }
-
-  const stats = getRequestStats(records)
-
   return {
-    method: 'normal',
-    stats: stats ?? undefined,
-    getDenialChance: (cap: number) => getNormalDenialChance(stats, cap),
-    getExpectedDenials: (cap: number) => getNormalExpectedDenials(stats, cap),
+    method: 'historical',
+    getDenialChance: (cap: number) => getHistoricalDenialChance(records, cap),
+    getExpectedDenials: (cap: number) => getHistoricalExpectedDenials(records, cap),
   }
 }
 

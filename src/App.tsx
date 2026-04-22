@@ -231,7 +231,6 @@ export default function App() {
   const mostRecentRecord = getMostRecentRecord(matchingRecords)
   const baselineCap = mostRecentRecord?.licensetotal ?? null
   const estimator = getEstimator(matchingRecords)
-  const usesNormalModel = estimator?.method === 'normal'
   const capRows = buildCapRows(estimator, baselineCap)
   const customCapValue = Number(customCap)
   const customCapChance = Number.isInteger(customCapValue)
@@ -437,9 +436,8 @@ Licenses: ${workbookDiagnostics.sampleLicenses.join(', ') || '(none)'}`}
               {matchingRecords.length > 0 ? (
                 <>
                   <p className="current-cap-note">
-                    {usesNormalModel
-                      ? `This license has ${matchingRecords.length} records, so the app uses a normal distribution fitted to the request history.`
-                      : `This license has ${matchingRecords.length} records, so the app uses the direct historical rate from those records.`}
+                    This license has {matchingRecords.length} records, so the app uses
+                    the direct historical rate from those records.
                   </p>
                   {mostRecentRecord ? (
                     <p className="current-cap-note">

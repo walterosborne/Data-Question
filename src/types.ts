@@ -10,16 +10,8 @@ export type LicenseRecord = {
 
 export type FilterKey = 'network' | 'vendorname' | 'featurename'
 
-export type RequestStats = {
-  mean: number
-  standardDeviation: number
-}
-
-export type EstimatorMethod = 'historical' | 'normal'
-
 export type Estimator = {
-  method: EstimatorMethod
-  stats?: RequestStats
+  method: 'historical'
   getDenialChance: (cap: number) => number | null
   getExpectedDenials: (cap: number) => number | null
 }
