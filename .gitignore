@@ -20,3 +20,4 @@ pnpm-debug.log*
 *.swp
 *.swo
 
+public/license-history.xlsx

@@ -35,7 +35,7 @@ const EXPECTED_COLUMNS = [
   'vendorname',
   'featurename',
   'licensetotal',
-  'numbernormal',
+  'peakusage',
   'numberdenials',
 ] as const
 
@@ -114,7 +114,7 @@ function parseLicenseHistoryRow(row: Record<string, unknown>): LicenseRecord | n
     vendorname,
     featurename,
     licensetotal: toNumberValue(row.licensetotal),
-    numbernormal: toNumberValue(row.numbernormal),
+    peakusage: toNumberValue(row.peakusage),
     numberdenials: toNumberValue(row.numberdenials),
   }
 }
@@ -430,9 +430,9 @@ Licenses: ${workbookDiagnostics.sampleLicenses.join(', ') || '(none)'}`}
             <div className="logic-blurb">
               <h2>How this estimate works</h2>
               <p>
-                The percentage is the chance that requests would go over the
-                selected cap, and expected denials is the average number of requests
-                that would be denied at that cap.
+                The percentage is the chance that peak usage would go over the
+                selected cap, and expected denials is the average amount above that
+                cap.
               </p>
               {matchingRecords.length > 0 ? (
                 <>

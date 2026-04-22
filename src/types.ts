@@ -4,7 +4,7 @@ export type LicenseRecord = {
   vendorname: string
   featurename: string
   licensetotal: number
-  numbernormal: number
+  peakusage: number
   numberdenials: number
 }
 

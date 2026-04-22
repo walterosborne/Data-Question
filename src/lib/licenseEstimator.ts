@@ -26,7 +26,7 @@ function getHistoricalDenialChance(
     return null
   }
 
-  const denialDates = records.filter((record) => record.numbernormal > cap).length
+  const denialDates = records.filter((record) => record.peakusage > cap).length
   return (denialDates / records.length) * 100
 }
 
@@ -39,7 +39,7 @@ function getHistoricalExpectedDenials(
   }
 
   const totalDeniedRequests = records.reduce((sum, record) => {
-    return sum + Math.max(record.numbernormal - cap, 0)
+    return sum + Math.max(record.peakusage - cap, 0)
   }, 0)
 
   return totalDeniedRequests / records.length
@@ -51,10 +51,10 @@ function getRequestStats(records: LicenseRecord[]): RequestStats | null {
   }
 
   const mean =
-    records.reduce((sum, record) => sum + record.numbernormal, 0) / records.length
+    records.reduce((sum, record) => sum + record.peakusage, 0) / records.length
   const variance =
     records.reduce((sum, record) => {
-      return sum + (record.numbernormal - mean) ** 2
+      return sum + (record.peakusage - mean) ** 2
     }, 0) / records.length
 
   return {
