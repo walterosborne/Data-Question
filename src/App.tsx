@@ -8,6 +8,37 @@ import {
 } from './lib/licenseEstimator'
 import type { LicenseRecord } from './types'
 
+type WorkbookDiagnostics = {
+  workbookPath: string
+  sheetName: string
+  rawHeaders: string[]
+  normalizedHeaders: string[]
+  missingColumns: string[]
+  totalRows: number
+  parsedRows: number
+  nonEmptyNetworks: number
+  sampleNetworks: string[]
+  sampleVendors: string[]
+  sampleLicenses: string[]
+  firstParsedRow: LicenseRecord | null
+}
+
+type WorkbookLoadResult = {
+  records: LicenseRecord[]
+  diagnostics: WorkbookDiagnostics
+}
+
+const WORKBOOK_PATH = '/license-history.xlsx'
+const EXPECTED_COLUMNS = [
+  'UsageDate',
+  'network',
+  'vendorname',
+  'featurename',
+  'licensetotal',
+  'numbernormal',
+  'numberdenials',
+] as const
+
 function formatPercent(value: number): string {
   const roundedValue = Math.round(value * 10) / 10
 
@@ -47,11 +78,26 @@ function toNumberValue(value: unknown): number {
 }
 
 function normalizeUsageDate(value: unknown): string {
+  if (typeof value === 'number') {
+    const parsedDate = XLSX.SSF.parse_date_code(value)
+
+    if (parsedDate) {
+      const year = String(parsedDate.y).padStart(4, '0')
+      const month = String(parsedDate.m).padStart(2, '0')
+      const day = String(parsedDate.d).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+
   if (value instanceof Date) {
     return value.toISOString().slice(0, 10)
   }
 
   return toStringValue(value)
+}
+
+function normalizeColumnName(value: unknown): string {
+  return toStringValue(value).toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 function parseLicenseHistoryRow(row: Record<string, unknown>): LicenseRecord | null {
@@ -73,8 +119,18 @@ function parseLicenseHistoryRow(row: Record<string, unknown>): LicenseRecord | n
   }
 }
 
-async function loadLicenseHistoryFromWorkbook(): Promise<LicenseRecord[]> {
-  const response = await fetch('/license-history.xlsx')
+function buildRowObject(
+  headers: string[],
+  rowValues: unknown[],
+): Record<string, unknown> {
+  return headers.reduce<Record<string, unknown>>((rowObject, header, index) => {
+    rowObject[header] = rowValues[index]
+    return rowObject
+  }, {})
+}
+
+async function loadLicenseHistoryFromWorkbook(): Promise<WorkbookLoadResult> {
+  const response = await fetch(WORKBOOK_PATH)
 
   if (!response.ok) {
     throw new Error(
@@ -94,17 +150,54 @@ async function loadLicenseHistoryFromWorkbook(): Promise<LicenseRecord[]> {
   }
 
   const firstWorksheet = workbook.Sheets[firstSheetName]
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstWorksheet, {
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(firstWorksheet, {
+    header: 1,
     defval: '',
   })
-
-  return rows
+  const headerRow = rawRows[0] ?? []
+  const normalizedHeaders = headerRow.map(normalizeColumnName)
+  const missingColumns = EXPECTED_COLUMNS.filter(
+    (column) => !normalizedHeaders.includes(normalizeColumnName(column)),
+  )
+  const records = rawRows
+    .slice(1)
+    .map((rowValues) =>
+      buildRowObject(normalizedHeaders, Array.isArray(rowValues) ? rowValues : []),
+    )
     .map(parseLicenseHistoryRow)
     .filter((row): row is LicenseRecord => row !== null)
+
+  const diagnostics: WorkbookDiagnostics = {
+    workbookPath: WORKBOOK_PATH,
+    sheetName: firstSheetName,
+    rawHeaders: headerRow.map(toStringValue),
+    normalizedHeaders,
+    missingColumns: [...missingColumns],
+    totalRows: Math.max(rawRows.length - 1, 0),
+    parsedRows: records.length,
+    nonEmptyNetworks: records.filter((record) => Boolean(record.network)).length,
+    sampleNetworks: [...new Set(records.map((record) => record.network).filter(Boolean))].slice(0, 5),
+    sampleVendors: [...new Set(records.map((record) => record.vendorname).filter(Boolean))].slice(0, 5),
+    sampleLicenses: [...new Set(records.map((record) => record.featurename).filter(Boolean))].slice(0, 5),
+    firstParsedRow: records[0] ?? null,
+  }
+
+  if (missingColumns.length > 0) {
+    throw new Error(
+      `The workbook is missing expected columns: ${missingColumns.join(', ')}.`,
+    )
+  }
+
+  return {
+    records,
+    diagnostics,
+  }
 }
 
 export default function App() {
   const [licenseHistory, setLicenseHistory] = useState<LicenseRecord[]>([])
+  const [workbookDiagnostics, setWorkbookDiagnostics] =
+    useState<WorkbookDiagnostics | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [loadError, setLoadError] = useState<string>('')
   const [selectedNetwork, setSelectedNetwork] = useState<string>('')
@@ -156,11 +249,15 @@ export default function App() {
       setLoadError('')
 
       try {
+        const workbookResult = await loadLicenseHistoryFromWorkbook()
+
         if (isActive) {
-          setLicenseHistory(await loadLicenseHistoryFromWorkbook())
+          setLicenseHistory(workbookResult.records)
+          setWorkbookDiagnostics(workbookResult.diagnostics)
         }
       } catch (error) {
         if (isActive) {
+          setWorkbookDiagnostics(null)
           setLoadError(
             error instanceof Error
               ? error.message
@@ -233,6 +330,9 @@ export default function App() {
                 onChange={handleNetworkChange}
                 disabled={isLoading || !networks.length}
               >
+                {selectedNetwork === '' ? (
+                  <option value="">Select network</option>
+                ) : null}
                 {networks.map((network) => (
                   <option key={network} value={network}>
                     {network}
@@ -272,6 +372,56 @@ export default function App() {
                 ))}
               </select>
             </label>
+          </div>
+
+          <div className="debug-card">
+            <h2>Workbook Diagnostics</h2>
+            {isLoading ? (
+              <p>Reading workbook...</p>
+            ) : workbookDiagnostics ? (
+              <>
+                <p>
+                  Loaded <strong>{workbookDiagnostics.parsedRows}</strong> rows from{' '}
+                  <strong>{workbookDiagnostics.workbookPath}</strong> using sheet{' '}
+                  <strong>{workbookDiagnostics.sheetName}</strong>.
+                </p>
+                <p>
+                  Expected columns found:{' '}
+                  <strong>
+                    {EXPECTED_COLUMNS.length - workbookDiagnostics.missingColumns.length}/
+                    {EXPECTED_COLUMNS.length}
+                  </strong>
+                </p>
+                <p>
+                  Non-empty network values: <strong>{workbookDiagnostics.nonEmptyNetworks}</strong>
+                </p>
+                {workbookDiagnostics.missingColumns.length > 0 ? (
+                  <p className="debug-warning">
+                    Missing columns: {workbookDiagnostics.missingColumns.join(', ')}
+                  </p>
+                ) : null}
+                <details>
+                  <summary>Detected headers</summary>
+                  <pre>{workbookDiagnostics.rawHeaders.join('\n')}</pre>
+                </details>
+                <details>
+                  <summary>Sample values</summary>
+                  <pre>
+{`Networks: ${workbookDiagnostics.sampleNetworks.join(', ') || '(none)'}
+Vendors: ${workbookDiagnostics.sampleVendors.join(', ') || '(none)'}
+Licenses: ${workbookDiagnostics.sampleLicenses.join(', ') || '(none)'}`}
+                  </pre>
+                </details>
+                <details>
+                  <summary>First parsed row</summary>
+                  <pre>
+                    {JSON.stringify(workbookDiagnostics.firstParsedRow, null, 2)}
+                  </pre>
+                </details>
+              </>
+            ) : (
+              <p>No workbook diagnostics available yet.</p>
+            )}
           </div>
         </aside>
 
