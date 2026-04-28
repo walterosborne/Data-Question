@@ -72,50 +72,6 @@ select {
   gap: 16px;
 }
 
-.debug-card {
-  margin-top: 20px;
-  padding: 16px;
-  border: 1px solid #d6e3ee;
-  border-radius: 16px;
-  background: #f8fbfd;
-}
-
-.debug-card h2 {
-  margin: 0 0 10px;
-  font-size: 1rem;
-}
-
-.debug-card p {
-  margin: 0 0 10px;
-  color: #486172;
-}
-
-.debug-card details + details {
-  margin-top: 10px;
-}
-
-.debug-card summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: #274156;
-}
-
-.debug-card pre {
-  margin: 10px 0 0;
-  padding: 12px;
-  overflow-x: auto;
-  border-radius: 12px;
-  background: #eef5fb;
-  color: #274156;
-  font-size: 0.85rem;
-  white-space: pre-wrap;
-}
-
-.debug-warning {
-  color: #9b3d00 !important;
-  font-weight: 600;
-}
-
 .filters label {
   display: flex;
   flex-direction: column;
@@ -214,10 +170,6 @@ select:disabled {
 .logic-blurb p {
   margin: 0;
   color: #486172;
-}
-
-.current-cap-note {
-  margin-top: 12px !important;
 }
 
 table {

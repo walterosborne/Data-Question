@@ -48,29 +48,24 @@ export function getEstimator(records: LicenseRecord[]): Estimator | null {
   }
 }
 
-export function getMostRecentRecord(records: LicenseRecord[]): LicenseRecord | null {
+export function getAveragePeakUsage(records: LicenseRecord[]): number | null {
   if (!records.length) {
     return null
   }
 
-  return records.reduce<LicenseRecord | null>((latestRecord, record) => {
-    if (!latestRecord || record.UsageDate > latestRecord.UsageDate) {
-      return record
-    }
-
-    return latestRecord
-  }, null)
+  const totalPeakUsage = records.reduce((sum, record) => sum + record.peakusage, 0)
+  return totalPeakUsage / records.length
 }
 
 export function buildCapRows(
   estimator: Estimator | null,
-  currentCap: number | null,
+  centerCap: number | null,
 ): CapRow[] {
-  if (!estimator || currentCap === null) {
+  if (!estimator || centerCap === null) {
     return []
   }
 
-  const startingCap = Math.max(1, currentCap - 2)
+  const startingCap = Math.max(1, centerCap - 2)
 
   return Array.from({ length: 5 }, (_, index) => {
     const cap = startingCap + index

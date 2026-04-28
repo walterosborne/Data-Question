@@ -1,32 +1,12 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import * as XLSX from 'xlsx'
 import {
+  getAveragePeakUsage,
   buildCapRows,
   getEstimator,
-  getMostRecentRecord,
   uniqueValues,
 } from './lib/licenseEstimator'
 import type { LicenseRecord } from './types'
-
-type WorkbookDiagnostics = {
-  workbookPath: string
-  sheetName: string
-  rawHeaders: string[]
-  normalizedHeaders: string[]
-  missingColumns: string[]
-  totalRows: number
-  parsedRows: number
-  nonEmptyNetworks: number
-  sampleNetworks: string[]
-  sampleVendors: string[]
-  sampleLicenses: string[]
-  firstParsedRow: LicenseRecord | null
-}
-
-type WorkbookLoadResult = {
-  records: LicenseRecord[]
-  diagnostics: WorkbookDiagnostics
-}
 
 const WORKBOOK_PATH = '/license-history.xlsx'
 const EXPECTED_COLUMNS = [
@@ -129,7 +109,7 @@ function buildRowObject(
   }, {})
 }
 
-async function loadLicenseHistoryFromWorkbook(): Promise<WorkbookLoadResult> {
+async function loadLicenseHistoryFromWorkbook(): Promise<LicenseRecord[]> {
   const response = await fetch(WORKBOOK_PATH)
 
   if (!response.ok) {
@@ -167,37 +147,17 @@ async function loadLicenseHistoryFromWorkbook(): Promise<WorkbookLoadResult> {
     .map(parseLicenseHistoryRow)
     .filter((row): row is LicenseRecord => row !== null)
 
-  const diagnostics: WorkbookDiagnostics = {
-    workbookPath: WORKBOOK_PATH,
-    sheetName: firstSheetName,
-    rawHeaders: headerRow.map(toStringValue),
-    normalizedHeaders,
-    missingColumns: [...missingColumns],
-    totalRows: Math.max(rawRows.length - 1, 0),
-    parsedRows: records.length,
-    nonEmptyNetworks: records.filter((record) => Boolean(record.network)).length,
-    sampleNetworks: [...new Set(records.map((record) => record.network).filter(Boolean))].slice(0, 5),
-    sampleVendors: [...new Set(records.map((record) => record.vendorname).filter(Boolean))].slice(0, 5),
-    sampleLicenses: [...new Set(records.map((record) => record.featurename).filter(Boolean))].slice(0, 5),
-    firstParsedRow: records[0] ?? null,
-  }
-
   if (missingColumns.length > 0) {
     throw new Error(
       `The workbook is missing expected columns: ${missingColumns.join(', ')}.`,
     )
   }
 
-  return {
-    records,
-    diagnostics,
-  }
+  return records
 }
 
 export default function App() {
   const [licenseHistory, setLicenseHistory] = useState<LicenseRecord[]>([])
-  const [workbookDiagnostics, setWorkbookDiagnostics] =
-    useState<WorkbookDiagnostics | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [loadError, setLoadError] = useState<string>('')
   const [selectedNetwork, setSelectedNetwork] = useState<string>('')
@@ -228,8 +188,9 @@ export default function App() {
       record.featurename === selectedLicense,
   )
 
-  const mostRecentRecord = getMostRecentRecord(matchingRecords)
-  const baselineCap = mostRecentRecord?.licensetotal ?? null
+  const averagePeakUsage = getAveragePeakUsage(matchingRecords)
+  const baselineCap =
+    averagePeakUsage === null ? null : Math.max(1, Math.round(averagePeakUsage))
   const estimator = getEstimator(matchingRecords)
   const capRows = buildCapRows(estimator, baselineCap)
   const customCapValue = Number(customCap)
@@ -248,15 +209,13 @@ export default function App() {
       setLoadError('')
 
       try {
-        const workbookResult = await loadLicenseHistoryFromWorkbook()
+        const records = await loadLicenseHistoryFromWorkbook()
 
         if (isActive) {
-          setLicenseHistory(workbookResult.records)
-          setWorkbookDiagnostics(workbookResult.diagnostics)
+          setLicenseHistory(records)
         }
       } catch (error) {
         if (isActive) {
-          setWorkbookDiagnostics(null)
           setLoadError(
             error instanceof Error
               ? error.message
@@ -372,56 +331,6 @@ export default function App() {
               </select>
             </label>
           </div>
-
-          <div className="debug-card">
-            <h2>Workbook Diagnostics</h2>
-            {isLoading ? (
-              <p>Reading workbook...</p>
-            ) : workbookDiagnostics ? (
-              <>
-                <p>
-                  Loaded <strong>{workbookDiagnostics.parsedRows}</strong> rows from{' '}
-                  <strong>{workbookDiagnostics.workbookPath}</strong> using sheet{' '}
-                  <strong>{workbookDiagnostics.sheetName}</strong>.
-                </p>
-                <p>
-                  Expected columns found:{' '}
-                  <strong>
-                    {EXPECTED_COLUMNS.length - workbookDiagnostics.missingColumns.length}/
-                    {EXPECTED_COLUMNS.length}
-                  </strong>
-                </p>
-                <p>
-                  Non-empty network values: <strong>{workbookDiagnostics.nonEmptyNetworks}</strong>
-                </p>
-                {workbookDiagnostics.missingColumns.length > 0 ? (
-                  <p className="debug-warning">
-                    Missing columns: {workbookDiagnostics.missingColumns.join(', ')}
-                  </p>
-                ) : null}
-                <details>
-                  <summary>Detected headers</summary>
-                  <pre>{workbookDiagnostics.rawHeaders.join('\n')}</pre>
-                </details>
-                <details>
-                  <summary>Sample values</summary>
-                  <pre>
-{`Networks: ${workbookDiagnostics.sampleNetworks.join(', ') || '(none)'}
-Vendors: ${workbookDiagnostics.sampleVendors.join(', ') || '(none)'}
-Licenses: ${workbookDiagnostics.sampleLicenses.join(', ') || '(none)'}`}
-                  </pre>
-                </details>
-                <details>
-                  <summary>First parsed row</summary>
-                  <pre>
-                    {JSON.stringify(workbookDiagnostics.firstParsedRow, null, 2)}
-                  </pre>
-                </details>
-              </>
-            ) : (
-              <p>No workbook diagnostics available yet.</p>
-            )}
-          </div>
         </aside>
 
         <section className="card">
@@ -433,20 +342,6 @@ Licenses: ${workbookDiagnostics.sampleLicenses.join(', ') || '(none)'}`}
                 selected cap, and expected denials is the average amount above that
                 cap.
               </p>
-              {matchingRecords.length > 0 ? (
-                <>
-                  <p className="current-cap-note">
-                    This license has {matchingRecords.length} records, so the app uses
-                    the direct historical rate from those records.
-                  </p>
-                  {mostRecentRecord ? (
-                    <p className="current-cap-note">
-                      Current cap from the most recent record on {mostRecentRecord.UsageDate}:{' '}
-                      <strong>{baselineCap}</strong>
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
             </div>
 
             <div className="results-panel">
