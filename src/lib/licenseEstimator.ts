@@ -48,6 +48,41 @@ export function getEstimator(records: LicenseRecord[]): Estimator | null {
   }
 }
 
+export function getCapClosestToTargetDenialChance(
+  records: LicenseRecord[],
+  targetChance: number,
+): number | null {
+  const estimator = getEstimator(records)
+
+  if (!estimator) {
+    return null
+  }
+
+  const maxCap = Math.max(...records.map((record) => record.peakusage), 1)
+  let closestCap: number | null = null
+  let closestDifference = Number.POSITIVE_INFINITY
+
+  for (let cap = 1; cap <= maxCap; cap += 1) {
+    const denialChance = estimator.getDenialChance(cap)
+
+    if (denialChance === null) {
+      continue
+    }
+
+    const difference = Math.abs(denialChance - targetChance)
+
+    if (
+      difference < closestDifference ||
+      (difference === closestDifference && closestCap !== null && cap < closestCap)
+    ) {
+      closestCap = cap
+      closestDifference = difference
+    }
+  }
+
+  return closestCap
+}
+
 export function getAveragePeakUsage(records: LicenseRecord[]): number | null {
   if (!records.length) {
     return null

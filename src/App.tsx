@@ -1,8 +1,8 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import * as XLSX from 'xlsx'
 import {
-  getAveragePeakUsage,
   buildCapRows,
+  getCapClosestToTargetDenialChance,
   getEstimator,
   uniqueValues,
 } from './lib/licenseEstimator'
@@ -188,9 +188,7 @@ export default function App() {
       record.featurename === selectedLicense,
   )
 
-  const averagePeakUsage = getAveragePeakUsage(matchingRecords)
-  const baselineCap =
-    averagePeakUsage === null ? null : Math.max(1, Math.round(averagePeakUsage))
+  const baselineCap = getCapClosestToTargetDenialChance(matchingRecords, 50)
   const estimator = getEstimator(matchingRecords)
   const capRows = buildCapRows(estimator, baselineCap)
   const customCapValue = Number(customCap)
